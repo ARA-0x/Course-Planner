@@ -66,9 +66,12 @@ app/src/main/java/ir/courseplanner/app/
 
 ## نقشه راه پیشنهادی
 
-- فاز ۱ (معماری): Hilt، Navigation-Compose، DataStore به‌جای SharedPreferences،
-  Migration واقعی Room به‌جای `fallbackToDestructiveMigration`
-- فاز ۲ (محصول): سقف واحد در ژنراتور، پیش‌نیاز دروس، خروجی ICS، یادآور کلاس، بکاپ/ری‌استور
+- فاز ۱ (زیرساخت آفلاین — انجام شد): Hilt، DataStore به‌جای SharedPreferences
+  (با `SharedPreferencesMigration` برای حفظ تنظیمات نصب‌های قبلی)، حذف
+  `fallbackToDestructiveMigration` و اجباری شدن Migration برای هر تغییر اسکیما
+  (اسکیماها در `app/schemas` ورژن می‌شوند)
+- بعدی: Navigation-Compose، سقف واحد در ژنراتور، یادآور لوکال کلاس/امتحان،
+  خروجی ICS، بکاپ/ری‌استور فایل JSON
 
 ## لایسنس
 

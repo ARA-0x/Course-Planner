@@ -6,7 +6,6 @@ import androidx.lifecycle.viewModelScope
 import ir.courseplanner.app.data.importer.CourseImporter
 import ir.courseplanner.app.data.importer.ImportItem
 import ir.courseplanner.app.data.importer.ImportResult
-import ir.courseplanner.app.data.local.AppDatabase
 import ir.courseplanner.app.data.model.ClassSession
 import ir.courseplanner.app.data.model.Conflict
 import ir.courseplanner.app.data.model.Course
@@ -34,6 +33,8 @@ import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
+import dagger.hilt.android.lifecycle.HiltViewModel
+import javax.inject.Inject
 
 enum class AppDestination {
     HOME,
@@ -71,17 +72,17 @@ enum class CourseSortOrder(val titleFa: String) {
     CODE("کد درس")
 }
 
-class CoursePlannerViewModel(application: Application) : AndroidViewModel(application) {
+@HiltViewModel
+class CoursePlannerViewModel @Inject constructor(
+    application: Application,
+    private val repository: CourseRepository,
+    private val preferencesManager: PreferencesManager
+) : AndroidViewModel(application) {
 
-    private val repository: CourseRepository
-    private val preferencesManager: PreferencesManager = PreferencesManager(application)
     val userPreferences: StateFlow<UserPreferences> = preferencesManager.preferences
 
     init {
-        val db = AppDatabase.getDatabase(application)
-        repository = CourseRepository(db.courseDao(), db.sectionDao(), db.documentDao())
-
-        // Ensure database is clean of pre-loaded sample courses for release
+        // One-time cleanup of pre-loaded sample courses for release builds.
         viewModelScope.launch {
             if (!preferencesManager.isReleaseCleanDone()) {
                 repository.clearAllData()

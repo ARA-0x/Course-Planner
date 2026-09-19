@@ -1,11 +1,30 @@
 package ir.courseplanner.app.data.preferences
 
 import android.content.Context
-import android.content.SharedPreferences
 import androidx.compose.ui.graphics.Color
-import kotlinx.coroutines.flow.MutableStateFlow
+import androidx.datastore.core.DataMigration
+import androidx.datastore.preferences.SharedPreferencesMigration
+import androidx.datastore.preferences.core.Preferences
+import androidx.datastore.preferences.core.booleanPreferencesKey
+import androidx.datastore.preferences.core.edit
+import androidx.datastore.preferences.core.emptyPreferences
+import androidx.datastore.preferences.core.intPreferencesKey
+import androidx.datastore.preferences.core.stringPreferencesKey
+import androidx.datastore.preferences.preferencesDataStore
+import dagger.hilt.android.qualifiers.ApplicationContext
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
-import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.flow.catch
+import kotlinx.coroutines.flow.first
+import kotlinx.coroutines.flow.map
+import kotlinx.coroutines.flow.stateIn
+import kotlinx.coroutines.launch
+import java.io.IOException
+import javax.inject.Inject
+import javax.inject.Singleton
 
 enum class AppColorTheme(
     val id: String,
@@ -122,88 +141,92 @@ data class UserPreferences(
     val timetableDensity: TimetableDensity = TimetableDensity.STANDARD
 )
 
-class PreferencesManager(context: Context) {
-    private val prefs: SharedPreferences = context.getSharedPreferences("planner_user_prefs", Context.MODE_PRIVATE)
+private const val DATASTORE_NAME = "planner_user_prefs"
 
-    private val _preferences = MutableStateFlow(loadPreferences())
-    val preferences: StateFlow<UserPreferences> = _preferences.asStateFlow()
+private val Context.plannerDataStore by preferencesDataStore(
+    name = DATASTORE_NAME,
+    produceMigrations = { context ->
+        // One-time upgrade path: existing installs keep their SharedPreferences values.
+        listOf<DataMigration<Preferences>>(SharedPreferencesMigration(context, DATASTORE_NAME))
+    }
+)
 
-    private fun loadPreferences(): UserPreferences {
-        val themeId = prefs.getString(KEY_THEME, AppColorTheme.INDIGO.id)
-        val themeModeId = prefs.getString(KEY_THEME_MODE, ThemeMode.SYSTEM.id)
-        val studentName = prefs.getString(KEY_STUDENT_NAME, "") ?: ""
-        val major = prefs.getString(KEY_MAJOR, "") ?: ""
-        val semesterName = prefs.getString(KEY_SEMESTER_NAME, "نیم‌سال اول ۱۴۰۳-۱۴۰۴") ?: "نیم‌سال اول ۱۴۰۳-۱۴۰۴"
-        val creditTarget = prefs.getInt(KEY_CREDIT_TARGET, 20)
-        val showThursday = prefs.getBoolean(KEY_SHOW_THURSDAY, true)
-        val densityId = prefs.getString(KEY_DENSITY, TimetableDensity.STANDARD.id)
+@Singleton
+class PreferencesManager @Inject constructor(
+    @ApplicationContext context: Context
+) {
+    private val scope = CoroutineScope(SupervisorJob() + Dispatchers.Default)
+    private val dataStore = context.plannerDataStore
 
-        return UserPreferences(
-            theme = AppColorTheme.fromId(themeId),
-            themeMode = ThemeMode.fromId(themeModeId),
-            studentName = studentName,
-            major = major,
-            semesterName = semesterName,
-            creditTarget = creditTarget,
-            showThursday = showThursday,
-            timetableDensity = TimetableDensity.fromId(densityId)
-        )
+    val preferences: StateFlow<UserPreferences> = dataStore.data
+        .catch { e ->
+            if (e is IOException) emit(emptyPreferences()) else throw e
+        }
+        .map { it.toUserPreferences() }
+        .stateIn(scope, SharingStarted.Eagerly, UserPreferences())
+
+    private fun update(block: suspend (androidx.datastore.preferences.core.MutablePreferences) -> Unit) {
+        scope.launch { dataStore.edit(block) }
     }
 
     fun setColorTheme(theme: AppColorTheme) {
-        prefs.edit().putString(KEY_THEME, theme.id).apply()
-        _preferences.value = _preferences.value.copy(theme = theme)
+        update { it[KEY_THEME] = theme.id }
     }
 
     fun setThemeMode(mode: ThemeMode) {
-        prefs.edit().putString(KEY_THEME_MODE, mode.id).apply()
-        _preferences.value = _preferences.value.copy(themeMode = mode)
+        update { it[KEY_THEME_MODE] = mode.id }
     }
 
     fun setStudentProfile(name: String, major: String, semester: String) {
-        prefs.edit()
-            .putString(KEY_STUDENT_NAME, name.trim())
-            .putString(KEY_MAJOR, major.trim())
-            .putString(KEY_SEMESTER_NAME, semester.trim().ifBlank { "نیم‌سال اول ۱۴۰۳-۱۴۰۴" })
-            .apply()
-        _preferences.value = _preferences.value.copy(
-            studentName = name.trim(),
-            major = major.trim(),
-            semesterName = semester.trim().ifBlank { "نیم‌سال اول ۱۴۰۳-۱۴۰۴" }
-        )
+        update {
+            it[KEY_STUDENT_NAME] = name.trim()
+            it[KEY_MAJOR] = major.trim()
+            it[KEY_SEMESTER_NAME] = semester.trim().ifBlank { DEFAULT_SEMESTER }
+        }
     }
 
     fun setCreditTarget(target: Int) {
-        val validTarget = target.coerceIn(10, 30)
-        prefs.edit().putInt(KEY_CREDIT_TARGET, validTarget).apply()
-        _preferences.value = _preferences.value.copy(creditTarget = validTarget)
+        update { it[KEY_CREDIT_TARGET] = target.coerceIn(10, 30) }
     }
 
     fun setShowThursday(show: Boolean) {
-        prefs.edit().putBoolean(KEY_SHOW_THURSDAY, show).apply()
-        _preferences.value = _preferences.value.copy(showThursday = show)
+        update { it[KEY_SHOW_THURSDAY] = show }
     }
 
     fun setTimetableDensity(density: TimetableDensity) {
-        prefs.edit().putString(KEY_DENSITY, density.id).apply()
-        _preferences.value = _preferences.value.copy(timetableDensity = density)
+        update { it[KEY_DENSITY] = density.id }
     }
 
-    fun isReleaseCleanDone(): Boolean = prefs.getBoolean(KEY_RELEASE_CLEAN, false)
+    suspend fun isReleaseCleanDone(): Boolean =
+        dataStore.data.map { it[KEY_RELEASE_CLEAN] ?: false }.first()
 
-    fun markReleaseCleanDone() {
-        prefs.edit().putBoolean(KEY_RELEASE_CLEAN, true).apply()
+    suspend fun markReleaseCleanDone() {
+        dataStore.edit { it[KEY_RELEASE_CLEAN] = true }
+    }
+
+    private fun Preferences.toUserPreferences(): UserPreferences {
+        return UserPreferences(
+            theme = AppColorTheme.fromId(this[KEY_THEME]),
+            themeMode = ThemeMode.fromId(this[KEY_THEME_MODE]),
+            studentName = this[KEY_STUDENT_NAME] ?: "",
+            major = this[KEY_MAJOR] ?: "",
+            semesterName = this[KEY_SEMESTER_NAME] ?: DEFAULT_SEMESTER,
+            creditTarget = this[KEY_CREDIT_TARGET] ?: 20,
+            showThursday = this[KEY_SHOW_THURSDAY] ?: true,
+            timetableDensity = TimetableDensity.fromId(this[KEY_DENSITY])
+        )
     }
 
     companion object {
-        private const val KEY_THEME = "app_theme"
-        private const val KEY_THEME_MODE = "app_theme_mode"
-        private const val KEY_STUDENT_NAME = "student_name"
-        private const val KEY_MAJOR = "student_major"
-        private const val KEY_SEMESTER_NAME = "semester_name"
-        private const val KEY_CREDIT_TARGET = "credit_target"
-        private const val KEY_SHOW_THURSDAY = "show_thursday"
-        private const val KEY_DENSITY = "timetable_density"
-        private const val KEY_RELEASE_CLEAN = "release_clean_courses_v1"
+        private const val DEFAULT_SEMESTER = "نیم‌سال اول ۱۴۰۳-۱۴۰۴"
+        private val KEY_THEME = stringPreferencesKey("app_theme")
+        private val KEY_THEME_MODE = stringPreferencesKey("app_theme_mode")
+        private val KEY_STUDENT_NAME = stringPreferencesKey("student_name")
+        private val KEY_MAJOR = stringPreferencesKey("student_major")
+        private val KEY_SEMESTER_NAME = stringPreferencesKey("semester_name")
+        private val KEY_CREDIT_TARGET = intPreferencesKey("credit_target")
+        private val KEY_SHOW_THURSDAY = booleanPreferencesKey("show_thursday")
+        private val KEY_DENSITY = stringPreferencesKey("timetable_density")
+        private val KEY_RELEASE_CLEAN = booleanPreferencesKey("release_clean_courses_v1")
     }
 }

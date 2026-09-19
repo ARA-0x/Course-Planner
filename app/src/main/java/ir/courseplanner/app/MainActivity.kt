@@ -47,6 +47,7 @@ import androidx.compose.ui.unit.LayoutDirection
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import dagger.hilt.android.AndroidEntryPoint
 import ir.courseplanner.app.data.preferences.ThemeMode
 import ir.courseplanner.app.ui.AppDestination
 import ir.courseplanner.app.ui.CoursePlannerViewModel
@@ -57,6 +58,7 @@ import ir.courseplanner.app.ui.screens.ScheduleScreen
 import ir.courseplanner.app.ui.screens.SettingsScreen
 import ir.courseplanner.app.ui.theme.MyApplicationTheme
 
+@AndroidEntryPoint
 class MainActivity : ComponentActivity() {
 
     private val viewModel: CoursePlannerViewModel by viewModels()

@@ -3,6 +3,7 @@ plugins {
   alias(libs.plugins.kotlin.compose)
   alias(libs.plugins.google.devtools.ksp)
   alias(libs.plugins.roborazzi)
+  alias(libs.plugins.hilt.android)
 }
 
 android {
@@ -82,7 +83,8 @@ dependencies {
   implementation(libs.androidx.compose.ui.graphics)
   implementation(libs.androidx.compose.ui.tooling.preview)
   implementation(libs.androidx.core.ktx)
-  // implementation(libs.androidx.datastore.preferences)
+  implementation(libs.androidx.datastore.preferences)
+  implementation(libs.hilt.android)
   implementation(libs.androidx.lifecycle.runtime.compose)
   implementation(libs.androidx.lifecycle.runtime.ktx)
   implementation(libs.androidx.lifecycle.viewmodel.compose)
@@ -109,4 +111,11 @@ dependencies {
   debugImplementation(libs.androidx.compose.ui.test.manifest)
   debugImplementation(libs.androidx.compose.ui.tooling)
   "ksp"(libs.androidx.room.compiler)
+  "ksp"(libs.hilt.compiler)
+}
+
+// Room schema export: schemas are versioned in git so every future
+// version bump MUST ship a Migration (see AppDatabase).
+ksp {
+  arg("room.schemaLocation", "$projectDir/schemas")
 }
